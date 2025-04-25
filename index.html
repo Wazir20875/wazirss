@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -10,18 +9,25 @@
   <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
   <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
   <style>
-    body { font-family: Arial, sans-serif; padding: 20px; }
+    body { font-family: Arial, sans-serif; padding: 20px; margin: 0; }
     .section { margin-bottom: 40px; }
-    canvas { max-width: 100%; height: auto; }
-    table { width: 100%; margin-top: 20px; }
+    canvas { width: 100% !important; height: auto !important; max-height: 400px; }
+    table { width: 100%; margin-top: 20px; font-size: 14px; }
+    #categoryChartTitle { font-size: 20px; font-weight: bold; margin-bottom: 10px; }
+    input, select { padding: 10px; font-size: 16px; width: 100%; }
+    #orgResults table { margin-top: 10px; }
+    ul#orgSuggestions { list-style: none; padding: 0; margin: 0; border: 1px solid #ccc; max-height: 150px; overflow-y: auto; background: #fff; position: absolute; z-index: 10; width: 100%; }
+    ul#orgSuggestions li { padding: 10px; cursor: pointer; }
+    ul#orgSuggestions li:hover { background: #f0f0f0; }
   </style>
 </head>
 <body>
   <h1>NHS League Table Dashboard 2024</h1>
 
-  <div class="section">
+  <div class="section" style="position: relative;">
     <h2>Search by Organisation</h2>
-    <input type="text" id="orgSearch" placeholder="Enter organisation name..." style="width: 100%; padding: 10px;">
+    <input type="text" id="orgSearch" placeholder="Start typing organisation name...">
+    <ul id="orgSuggestions"></ul>
     <div id="orgResults"></div>
   </div>
 
@@ -34,31 +40,42 @@
       <option value="Violence">Violence</option>
       <option value="Burnout">Burnout</option>
     </select>
+    <div id="categoryChartTitle"></div>
     <canvas id="categoryChart"></canvas>
     <table id="categoryTable" class="display"></table>
   </div>
 
   <script>
-    let data;
+    let data = [];
     fetch('nhs_league_table_2024.csv')
       .then(response => response.text())
       .then(text => {
         const rows = text.split('\n').map(row => row.split(','));
         const headers = rows.shift();
         data = rows.map(row => Object.fromEntries(headers.map((h, i) => [h, row[i]])));
+      }).catch(error => {
+        document.body.innerHTML += '<p style="color:red;"><strong>⚠️ Failed to load data. Please make sure you are running this page from a web server (not opening the file directly).</strong></p>';
+        throw error;
       });
 
     $('#orgSearch').on('input', function () {
       const keyword = this.value.toLowerCase();
-      const results = data.filter(d => d.OrgName.toLowerCase().includes(keyword));
+      const suggestions = data.filter(d => d.OrgName && d.OrgName.toLowerCase().includes(keyword)).slice(0, 10);
+      let suggestionHtml = '';
+      suggestions.forEach(d => {
+        suggestionHtml += `<li data-org='${JSON.stringify(d)}'>${d.OrgName}</li>`;
+      });
+      $('#orgSuggestions').html(suggestionHtml).show();
+    });
+
+    $(document).on('click', '#orgSuggestions li', function () {
+      const org = JSON.parse($(this).attr('data-org'));
+      $('#orgSuggestions').hide();
       let html = '<table class="display"><thead><tr><th>Category</th><th>Score</th></tr></thead><tbody>';
-      if (results.length > 0) {
-        const org = results[0];
-        const categories = ['Health and Wellbeing', 'Flexible Working', 'Bullying & Harassment', 'Violence', 'Burnout'];
-        categories.forEach(cat => {
-          html += `<tr><td>${cat}</td><td>${parseFloat(org[cat]).toFixed(0)}%</td></tr>`;
-        });
-      }
+      const categories = ['Health and Wellbeing', 'Flexible Working', 'Bullying & Harassment', 'Violence', 'Burnout'];
+      categories.forEach(cat => {
+        html += `<tr><td>${cat}</td><td>${parseFloat(org[cat] || 0).toFixed(0)}%</td></tr>`;
+      });
       html += '</tbody></table>';
       $('#orgResults').html(html);
       $('#orgResults table').DataTable();
@@ -66,6 +83,7 @@
 
     $('#categorySelect').on('change', function () {
       const cat = this.value;
+      $('#categoryChartTitle').text(`${cat} - Top 10 Organisations`);
       const cleanData = data.filter(d => d[cat]);
       const sorted = cleanData.sort((a, b) => parseFloat(b[cat]) - parseFloat(a[cat]));
       const top10 = sorted.slice(0, 10);
